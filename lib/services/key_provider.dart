@@ -151,4 +151,27 @@ class KeyProvider {
       'one_time_prekeys': oneTimePreKeys.map((k) => {"key": base64Encode(k['public']!)}).toList(),
     };
   }
+
+Future<Map<String, String>> generateSignedMessage(String message) async {
+  final identityKey = await getIdentityKeyPair();
+  if (identityKey == null) {
+    throw Exception('Identity key not found');
+  }
+
+  final privateKey =
+      await identityAlgorithm.newKeyPairFromSeed(identityKey['private']!);
+
+  final messageBytes = utf8.encode(message);
+  final signature = await identityAlgorithm.sign(
+    messageBytes,
+    keyPair: privateKey,
+  );
+
+  return {
+    'identity_pubkey': base64Encode(identityKey['public']!),
+    'message': base64Encode(messageBytes),
+    'signature': base64Encode(signature.bytes),
+  };
+}
+
 }

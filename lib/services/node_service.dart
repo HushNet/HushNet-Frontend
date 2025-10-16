@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/secure_storage_service.dart';
 import 'package:dio/dio.dart';
-import 'package:hushnet_frontend/utils/json_converter.dart';
 import 'package:logging/logging.dart';
 
 class NodeService {
@@ -50,6 +49,39 @@ class NodeService {
     } catch (e) {
       log.severe('Error registering user: $e');
       rethrow;
+    }
+  }
+
+  Future<String?> loginUser(String nodeUrl, ValueNotifier<int>? stepNotifier) async {
+    Map<String, dynamic> signedMessage = await _keyProvider.generateSignedMessage('Login request');
+      stepNotifier?.value += 1;
+    try {
+      log.info('Logging in user');
+      print(signedMessage);
+      final response = await dio.post(
+        '$nodeUrl/users/login',
+        options: Options(headers: {'Content-Type': 'application/json'}),
+        data: jsonEncode(signedMessage),
+      );
+      stepNotifier?.value += 2;
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final userId = data['id'] as String;
+        final username = data['username'] as String;
+        await _storage.write('username', username);
+        await _storage.write('user_id', userId);
+        await _storage.write('node_url', nodeUrl);
+        return username;
+      } else {
+        log.severe('Login failed: ${response.statusCode} ${response.data}');
+          stepNotifier?.value = 4;
+        return null;
+      }
+    } catch (e) {
+      stepNotifier?.value = 4;
+      log.severe('Error logging in user: $e');
+      return null;
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/data/node/node_connection.dart';
 import 'package:hushnet_frontend/screens/choose_username.dart';
+import 'package:hushnet_frontend/screens/find_user.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
 
 void showConnectionSheet(BuildContext context, String nodeAddress) {
@@ -137,7 +138,7 @@ class _ConnectionStepsSheetState extends State<ConnectionStepsSheet> {
               onPressed: () async {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => ChooseUsernameScreen(nodeAddress: widget.nodeAddress),
+                    builder: (context) => FindUserScreen(nodeAddress: widget.nodeAddress),
                   ),
                 );
               },
