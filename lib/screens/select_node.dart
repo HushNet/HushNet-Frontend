@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hushnet_frontend/widgets/button.dart';
 import 'package:hushnet_frontend/widgets/connection/bottom_sheet.dart';
 import 'package:hushnet_frontend/widgets/textfield.dart';
 import 'package:lottie/lottie.dart';
@@ -50,7 +51,9 @@ class SelectNodeScreen extends StatelessWidget {
                 controller: _nodeController,
               ),
               const SizedBox(height: 32),
-              ElevatedButton(
+              HushButton(
+                label: "Connect",
+                icon: Icons.link,
                 onPressed: () {
                   final nodeAddress = _nodeController.text.trim();
                   if (nodeAddress.isEmpty) {
@@ -59,20 +62,15 @@ class SelectNodeScreen extends StatelessWidget {
                     );
                     return;
                   }
-
                   showConnectionSheet(context, nodeAddress);
                 },
-                child: Text("Connect", style: Theme.of(context).textTheme.bodyMedium),
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text(
-                  'Go back',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+              HushButton(
+                label: "Go back",
+                icon: Icons.arrow_back,
+                color: Colors.grey[700]!,
+                onPressed: () => Navigator.pop(context),
               ),
             ],
           ),

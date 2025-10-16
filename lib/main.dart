@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/screens/onboarding.dart';
+import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/theme.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final keyProvider = KeyProvider();
+
+  runApp(const HushNetApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class HushNetApp extends StatelessWidget {
+  const HushNetApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

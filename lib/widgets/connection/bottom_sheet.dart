@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/data/node/node_connection.dart';
+import 'package:hushnet_frontend/screens/choose_username.dart';
+import 'package:hushnet_frontend/services/node_service.dart';
 
 void showConnectionSheet(BuildContext context, String nodeAddress) {
   showModalBottomSheet(
@@ -15,7 +17,7 @@ void showConnectionSheet(BuildContext context, String nodeAddress) {
 
 class ConnectionStepsSheet extends StatefulWidget {
     final String nodeAddress;
-  const ConnectionStepsSheet({
+   const ConnectionStepsSheet({
     super.key, required this.nodeAddress});
 
   @override
@@ -23,6 +25,7 @@ class ConnectionStepsSheet extends StatefulWidget {
 }
 
 class _ConnectionStepsSheetState extends State<ConnectionStepsSheet> {
+  final NodeService _nodeService = NodeService();
   ValueNotifier<int> stepNotifier = ValueNotifier(0);
   ValueNotifier<bool> errorNotifier = ValueNotifier(false);
   final List<String> _steps = [
@@ -131,8 +134,12 @@ class _ConnectionStepsSheetState extends State<ConnectionStepsSheet> {
           }),
           if (stepNotifier.value >= _steps.length && !errorNotifier.value)
             ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
+              onPressed: () async {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ChooseUsernameScreen(nodeAddress: widget.nodeAddress),
+                  ),
+                );
               },
               child: Text(
                 'Continue',

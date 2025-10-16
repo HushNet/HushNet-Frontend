@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> connectToNode(
   ValueNotifier<int> stepNotifier,
@@ -32,5 +33,9 @@ Future<void> connectToNode(
     log('Error connecting to node: $e');
     errorNotifier.value = true;
     return;
+  }
+  if (errorNotifier.value == false) {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('node_address', nodeAddress);
   }
 }
