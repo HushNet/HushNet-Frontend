@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:hushnet_frontend/models/user_device.dart';
 
 class KeyProvider {
   static final KeyProvider _instance = KeyProvider._internal();
@@ -144,6 +146,7 @@ class KeyProvider {
 
     return {
       'identity_pubkey': base64Encode(identityKey['public']!),
+      'prekey_pubkey': base64Encode(preKey['public']!),
       'signed_prekey' : {
         'key': base64Encode(signedPreKey['public']!),
         'signature': base64Encode(signedPreKey['signature']!),
@@ -174,4 +177,98 @@ Future<Map<String, String>> generateSignedMessage(String message) async {
   };
 }
 
+  Future<Map<String, Uint8List>> generateEphemeralKeyPair() async {
+    final algorithm = X25519();
+    final keyPair = await algorithm.newKeyPair();
+    final publicKey = await keyPair.extractPublicKey();
+    final privateKey = await keyPair.extractPrivateKeyBytes();
+
+    return {
+      'private': Uint8List.fromList(privateKey),
+      'public': Uint8List.fromList(publicKey.bytes),
+    };
+  }
+  Future<List<UserDevice>> getUserDevicesKeys(String userId) async {
+    final nodeUrl = await _storage.read(key: 'node_url');
+    try {
+      final response = await Dio().get(
+        '$nodeUrl/users/$userId/devices',
+      );
+
+      final data = response.data;
+      final List devicesJson = (data is List)
+          ? data
+          : (data['devices'] ?? []);
+
+      return devicesJson.map<UserDevice>((json) => UserDevice.fromJson(json)).toList();
+    } on DioException catch (e) {
+      debugPrint("Error fetching user devices: $e");
+      final status = e.response?.statusCode ?? 0;
+      final message = e.response?.data ?? e.message;
+      throw Exception('Failed to fetch user keys (HTTP $status): $message');
+    }
+  }
+
+
+  Future<Response> sendSignedRequest(
+    String method,
+    String url, {
+    Map<String, dynamic>? payload,
+  }) async {
+    try {
+      Dio dio = Dio();
+      // 🔹 1. Charger la clé d'identité Ed25519
+      final idKeyPair = await getIdentityKeyPair();
+      if (idKeyPair == null) throw Exception('Identity key not found');
+
+      // 🔹 2. Préparer timestamp UNIX (secondes)
+      final timestamp =
+          (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+
+      // 🔹 3. Signer le timestamp avec la clé privée Ed25519
+      final ed = Ed25519();
+      final keyPair = SimpleKeyPairData(
+        idKeyPair['private']!,
+        publicKey: SimplePublicKey(
+          idKeyPair['public']!,
+          type: KeyPairType.ed25519,
+        ),
+        type: KeyPairType.ed25519,
+      );
+
+      final signature = await ed.sign(
+        utf8.encode(timestamp),
+        keyPair: keyPair,
+      );
+
+      // 🔹 4. Construire les headers signés
+      final headers = {
+        'X-Identity-Key': base64Encode(idKeyPair['public']!),
+        'X-Timestamp': timestamp,
+        'X-Signature': base64Encode(signature.bytes),
+        'Content-Type': 'application/json',
+      };
+
+      // 🔹 5. Construire la requête Dio
+      final options = Options(
+        method: method.toUpperCase(),
+        headers: headers,
+      );
+
+      // 🔹 6. Exécuter la requête
+      final response = await dio.request(
+        url,
+        data: payload != null ? jsonEncode(payload) : null,
+        options: options,
+      );
+
+      debugPrint(
+          "✅ Signed $method request to $url → ${response.statusCode}");
+      return response;
+    } catch (e, st) {
+      debugPrint("❌ Error in sendSignedRequest($url): $e");
+      debugPrint(st.toString());
+      rethrow;
+    }
+  }
 }

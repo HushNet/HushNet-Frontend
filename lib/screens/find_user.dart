@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/screens/choose_username.dart';
+import 'package:hushnet_frontend/screens/conversations_screen.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
 import 'package:hushnet_frontend/widgets/button.dart';
 import 'package:lottie/lottie.dart';
@@ -130,7 +131,16 @@ class _FindUserScreenState extends State<FindUserScreen> {
                   label: 'Continue',
                   icon: Icons.arrow_forward,
                   onPressed: () {
-                    Navigator.pushReplacement(
+                    if (username != null) {
+                                          Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ConversationsScreen(
+                        ),
+                      ),
+                    );
+                    } else {
+                      Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) => ChooseUsernameScreen(
@@ -138,6 +148,7 @@ class _FindUserScreenState extends State<FindUserScreen> {
                         ),
                       ),
                     );
+                    }
                   },
                 ),
             ],

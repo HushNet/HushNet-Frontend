@@ -129,4 +129,8 @@ class NodeService {
       return false;
     }
   }
+  Future<String?> getCurrentNodeUrl() async {
+    return await _storage.read('node_url');
+  }
+  
 }
