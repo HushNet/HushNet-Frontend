@@ -4,17 +4,23 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hushnet_frontend/models/pending_sessions.dart';
+import 'package:hushnet_frontend/models/session.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
+import 'package:hushnet_frontend/services/secure_storage_service.dart';
 
 class SessionService {
   final KeyProvider keyProvider = KeyProvider();
   final Dio dio = Dio();
   final NodeService nodeService = NodeService();
+  final SecureStorageService secureStorage = SecureStorageService();
 
   Future<List<PendingSession>> getPendingSessions() async {
     final String? nodeUrl = await nodeService.getCurrentNodeUrl();
-    final req = await keyProvider.sendSignedRequest("GET", "$nodeUrl/sessions/pending");
+    final req = await keyProvider.sendSignedRequest(
+      "GET",
+      "$nodeUrl/sessions/pending",
+    );
     final data = req.data;
     final List sessions = (data is List) ? data : (data['sessions'] ?? []);
     return sessions.map((s) => PendingSession.fromJson(s)).toList();
@@ -62,21 +68,36 @@ class SessionService {
           type: KeyPairType.x25519,
         );
 
-        final senderIkPub = SimplePublicKey(senderPrekeyPub, type: KeyPairType.x25519);
-        final ekAPub = SimplePublicKey(senderEphemeral, type: KeyPairType.x25519);
+        final senderIkPub = SimplePublicKey(
+          senderPrekeyPub,
+          type: KeyPairType.x25519,
+        );
+        final ekAPub = SimplePublicKey(
+          senderEphemeral,
+          type: KeyPairType.x25519,
+        );
         debugPrint("Alice EK pub: ${base64Encode(senderEphemeral)}");
         debugPrint("Bob IK Priv: ${base64Encode(ikPriv)}");
 
         // DH1 = DH(SPK_B, IK_A)
-        final dh1 = await x25519.sharedSecretKey(keyPair: spkPair, remotePublicKey: senderIkPub);
+        final dh1 = await x25519.sharedSecretKey(
+          keyPair: spkPair,
+          remotePublicKey: senderIkPub,
+        );
         final dh1Bytes = await dh1.extractBytes();
 
         // DH2 = DH(IK_B, EK_A)
-        final dh2 = await x25519.sharedSecretKey(keyPair: ikPair, remotePublicKey: ekAPub);
+        final dh2 = await x25519.sharedSecretKey(
+          keyPair: ikPair,
+          remotePublicKey: ekAPub,
+        );
         final dh2Bytes = await dh2.extractBytes();
 
         // DH3 = DH(SPK_B, EK_A)
-        final dh3 = await x25519.sharedSecretKey(keyPair: spkPair, remotePublicKey: ekAPub);
+        final dh3 = await x25519.sharedSecretKey(
+          keyPair: spkPair,
+          remotePublicKey: ekAPub,
+        );
         final dh3Bytes = await dh3.extractBytes();
 
         // (optional) DH4 = DH(OPK_B, EK_A)
@@ -85,10 +106,16 @@ class SessionService {
           final opk = oneTimePreKeys.first;
           final opkPair = SimpleKeyPairData(
             opk['private']!,
-            publicKey: SimplePublicKey(opk['public']!, type: KeyPairType.x25519),
+            publicKey: SimplePublicKey(
+              opk['public']!,
+              type: KeyPairType.x25519,
+            ),
             type: KeyPairType.x25519,
           );
-          final dh4 = await x25519.sharedSecretKey(keyPair: opkPair, remotePublicKey: ekAPub);
+          final dh4 = await x25519.sharedSecretKey(
+            keyPair: opkPair,
+            remotePublicKey: ekAPub,
+          );
           dh4Bytes = await dh4.extractBytes();
         }
 
@@ -99,22 +126,19 @@ class SessionService {
         debugPrint('DH4 length: ${dh4Bytes.length}');
         debugPrint('Combined length: ${combined.length}');
         debugPrint('DH1: ${base64Encode(dh1Bytes)}');
-debugPrint('DH2: ${base64Encode(dh2Bytes)}');
-debugPrint('DH3: ${base64Encode(dh3Bytes)}');
-debugPrint('DH4: ${base64Encode(dh4Bytes)}');
+        debugPrint('DH2: ${base64Encode(dh2Bytes)}');
+        debugPrint('DH3: ${base64Encode(dh3Bytes)}');
+        debugPrint('DH4: ${base64Encode(dh4Bytes)}');
 
-final rootKey = await hkdf.deriveKey(
-  secretKey: SecretKey(combined),
-  nonce: utf8.encode('HushNet-Salt'),     // facultatif mais recommandé
-  info: utf8.encode('X3DH Root Key'),
-);
+        final rootKey = await hkdf.deriveKey(
+          secretKey: SecretKey(combined),
+          nonce: utf8.encode('HushNet-Salt'), // facultatif mais recommandé
+          info: utf8.encode('X3DH Root Key'),
+        );
 
         final plaintext = await _decryptCiphertext(p.ciphertext, rootKey, aes);
         debugPrint('✅ Decrypted pending session ${p.id}: $plaintext');
-
-        // Delete pending session on server
-        // final String? nodeUrl = await nodeService.getCurrentNodeUrl();
-        // await dio.delete('$nodeUrl/sessions/${p.id}/complete');
+        await initializeRatchetSession(p, rootKey);
       } catch (e) {
         debugPrint('❌ Failed to process ${p.id}: $e');
       }
@@ -137,5 +161,91 @@ final rootKey = await hkdf.deriveKey(
     final box = SecretBox(cipher, nonce: nonce, mac: Mac(mac));
     final clear = await aes.decrypt(box, secretKey: rootKey);
     return utf8.decode(clear);
+  }
+
+  Future<void> uploadSession(Session session, PendingSession pending) async {
+    final String? nodeUrl = await nodeService.getCurrentNodeUrl();
+    final req = await keyProvider.sendSignedRequest(
+      "POST",
+      "$nodeUrl/sessions/confirm",
+      payload: {
+        "pending_session_id": pending.id,
+        ...session.toConfirmJson(),
+      },
+    );
+    debugPrint('Uploaded session: ${req.statusCode}');
+    debugPrint('Response data: ${req.data}');
+  }
+
+  Future<void> initializeRatchetSession(
+    PendingSession pending,
+    SecretKey rootKey,
+  ) async {
+    // derive send/recv chain keys
+    try {
+      final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+      final rootBytes = await rootKey.extractBytes();
+
+      final sendChainKey = await hkdf.deriveKey(
+        secretKey: SecretKeyData(rootBytes),
+        nonce: utf8.encode('HushNet-Salt'),
+        info: utf8.encode('HushNet-Send-Chain'),
+      );
+
+      final recvChainKey = await hkdf.deriveKey(
+        secretKey: SecretKeyData(rootBytes),
+        nonce: utf8.encode('HushNet-Salt'),
+        info: utf8.encode('HushNet-Recv-Chain'),
+      );
+
+      final ratchetAlgo = X25519();
+      final ratchetPair = await ratchetAlgo.newKeyPair();
+      final ratchetPub = await ratchetPair.extractPublicKey();
+      final ratchetPriv = await ratchetPair.extractPrivateKeyBytes();
+
+      final rootKeyB64 = base64Encode(rootBytes);
+      final sendChainB64 = base64Encode(await sendChainKey.extractBytes());
+      final recvChainB64 = base64Encode(await recvChainKey.extractBytes());
+      final ratchetPubB64 = base64Encode(ratchetPub.bytes);
+      final ratchetPrivB64 = base64Encode(ratchetPriv);
+
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_root",
+        value: rootKeyB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_send_chain",
+        value: sendChainB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_recv_chain",
+        value: recvChainB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_ratchet_pub",
+        value: ratchetPubB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_ratchet_priv",
+        value: ratchetPrivB64,
+      );
+      debugPrint(
+        '✅ Initialized ratchet session with ${pending.senderDeviceId}',
+      );
+      final session = Session(
+        senderDeviceId: pending.senderDeviceId,
+        receiverDeviceId: pending.recipientDeviceId,
+        rootKey: Uint8List.fromList(rootBytes),
+        ratchetPub: Uint8List.fromList(ratchetPub.bytes),
+        lastRemotePub: Uint8List.fromList(
+          base64Decode(pending.ephemeralPubkey),
+        ),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await uploadSession(session, pending);
+    } catch (e) {
+      debugPrint('Error initializing ratchet session: $e');
+    }
   }
 }

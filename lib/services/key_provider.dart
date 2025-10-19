@@ -15,6 +15,7 @@ class KeyProvider {
   final keyExchangeAlgorithm = X25519();
   static const _identityKey = 'identity_key';
   static const _preKey = 'pre_key';
+  FlutterSecureStorage get secureStorage => _storage;
 
   KeyProvider._internal();
   Future<void> initialize(ValueNotifier<int>? stepNotifier) async {
