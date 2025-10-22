@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:hushnet_frontend/screens/conversations_screen.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
 import 'package:hushnet_frontend/widgets/textfield.dart';
@@ -216,7 +217,7 @@ class _ChooseUsernameScreenState extends State<ChooseUsernameScreen> {
                         final done = i < _stepNotifier.value;
                         final isActive = i == _stepNotifier.value;
                         final isError = _hasError && _errorStepIndex == i;
-              
+
                         return AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           margin: const EdgeInsets.symmetric(vertical: 8),
@@ -231,10 +232,10 @@ class _ChooseUsernameScreenState extends State<ChooseUsernameScreen> {
                               color: isError
                                   ? Colors.redAccent
                                   : done
-                                      ? Colors.greenAccent
-                                      : isActive
-                                          ? Colors.blueAccent
-                                          : Colors.transparent,
+                                  ? Colors.greenAccent
+                                  : isActive
+                                  ? Colors.blueAccent
+                                  : Colors.transparent,
                               width: 1.2,
                             ),
                           ),
@@ -244,17 +245,17 @@ class _ChooseUsernameScreenState extends State<ChooseUsernameScreen> {
                                 isError
                                     ? Icons.error_outline
                                     : done
-                                        ? Icons.check_circle
-                                        : isActive
-                                            ? Icons.autorenew_rounded
-                                            : Icons.radio_button_unchecked,
+                                    ? Icons.check_circle
+                                    : isActive
+                                    ? Icons.autorenew_rounded
+                                    : Icons.radio_button_unchecked,
                                 color: isError
                                     ? Colors.redAccent
                                     : done
-                                        ? Colors.greenAccent
-                                        : isActive
-                                            ? Colors.blueAccent
-                                            : Colors.white38,
+                                    ? Colors.greenAccent
+                                    : isActive
+                                    ? Colors.blueAccent
+                                    : Colors.white38,
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
@@ -265,10 +266,10 @@ class _ChooseUsernameScreenState extends State<ChooseUsernameScreen> {
                                     color: isError
                                         ? Colors.redAccent
                                         : done
-                                            ? Colors.greenAccent
-                                            : isActive
-                                                ? Colors.white
-                                                : Colors.white54,
+                                        ? Colors.greenAccent
+                                        : isActive
+                                        ? Colors.white
+                                        : Colors.white54,
                                     fontSize: 15,
                                   ),
                                 ),
@@ -282,7 +283,12 @@ class _ChooseUsernameScreenState extends State<ChooseUsernameScreen> {
                       const SizedBox(height: 32),
                       _buildCenteredButton(
                         onPressed: () {
-                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ConversationsScreen(),
+                            ),
+                          );
                         },
                         label: 'All done! Continue',
                         color: Colors.blueAccent,

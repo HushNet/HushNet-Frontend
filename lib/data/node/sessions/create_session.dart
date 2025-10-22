@@ -129,6 +129,59 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
         nonce: utf8.encode('HushNet-Salt'), // facultatif mais conseillé
         info: utf8.encode('X3DH Root Key'),
       );
+      final sendChainKey = await hkdf.deriveKey(
+        secretKey: rootKey,
+        nonce: utf8.encode('HushNet-Salt'),
+        info: utf8.encode('HushNet-Send-Chain'),
+      );
+
+      final recvChainKey = await hkdf.deriveKey(
+        secretKey: rootKey,
+        nonce: utf8.encode('HushNet-Salt'),
+        info: utf8.encode('HushNet-Recv-Chain'),
+      );
+
+      // 🧩 Génère ton propre ratchet keypair (X25519)
+      final ratchetAlgo = X25519();
+      final ratchetPair = await ratchetAlgo.newKeyPair();
+      final ratchetPub = await ratchetPair.extractPublicKey();
+      final ratchetPriv = await ratchetPair.extractPrivateKeyBytes();
+
+      // 🗄️ Sauvegarde dans SecureStorage
+      final rootB64 = base64Encode(await rootKey.extractBytes());
+      final sendB64 = base64Encode(await sendChainKey.extractBytes());
+      final recvB64 = base64Encode(await recvChainKey.extractBytes());
+      final ratchetPubB64 = base64Encode(ratchetPub.bytes);
+      final ratchetPrivB64 = base64Encode(ratchetPriv);
+
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_root",
+        value: rootB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_send_chain",
+        value: sendB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_recv_chain",
+        value: recvB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_ratchet_pub",
+        value: ratchetPubB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_ratchet_priv",
+        value: ratchetPrivB64,
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_send_counter",
+        value: "0",
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${device.deviceId}_recv_counter",
+        value: "0",
+      );
 
       // 6. encrypt initial plaintext with AES-GCM-256 using rootKey
       final nonce = aes.newNonce();

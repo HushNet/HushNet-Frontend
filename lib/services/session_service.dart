@@ -168,10 +168,7 @@ class SessionService {
     final req = await keyProvider.sendSignedRequest(
       "POST",
       "$nodeUrl/sessions/confirm",
-      payload: {
-        "pending_session_id": pending.id,
-        ...session.toConfirmJson(),
-      },
+      payload: {"pending_session_id": pending.id, ...session.toConfirmJson()},
     );
     debugPrint('Uploaded session: ${req.statusCode}');
     debugPrint('Response data: ${req.data}');
@@ -181,57 +178,75 @@ class SessionService {
     PendingSession pending,
     SecretKey rootKey,
   ) async {
-    // derive send/recv chain keys
     try {
       final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
       final rootBytes = await rootKey.extractBytes();
 
+      // 🔁 Receiver must invert the chain labeling
+      // - Our send_chain must match their recv derivation
+      // - Our recv_chain must match their send derivation
       final sendChainKey = await hkdf.deriveKey(
         secretKey: SecretKeyData(rootBytes),
         nonce: utf8.encode('HushNet-Salt'),
-        info: utf8.encode('HushNet-Send-Chain'),
+        info: utf8.encode('HushNet-Recv-Chain'), // <-- inverted
       );
 
       final recvChainKey = await hkdf.deriveKey(
         secretKey: SecretKeyData(rootBytes),
         nonce: utf8.encode('HushNet-Salt'),
-        info: utf8.encode('HushNet-Recv-Chain'),
+        info: utf8.encode('HushNet-Send-Chain'), // <-- inverted
       );
 
+      // Local ratchet key pair (for the DH ratchet phase that follows X3DH)
       final ratchetAlgo = X25519();
       final ratchetPair = await ratchetAlgo.newKeyPair();
       final ratchetPub = await ratchetPair.extractPublicKey();
       final ratchetPriv = await ratchetPair.extractPrivateKeyBytes();
 
-      final rootKeyB64 = base64Encode(rootBytes);
-      final sendChainB64 = base64Encode(await sendChainKey.extractBytes());
-      final recvChainB64 = base64Encode(await recvChainKey.extractBytes());
-      final ratchetPubB64 = base64Encode(ratchetPub.bytes);
-      final ratchetPrivB64 = base64Encode(ratchetPriv);
-
+      // Persist the session for the peer device (pending.senderDeviceId)
       await keyProvider.secureStorage.write(
         key: "session_${pending.senderDeviceId}_root",
-        value: rootKeyB64,
+        value: base64Encode(rootBytes),
       );
       await keyProvider.secureStorage.write(
         key: "session_${pending.senderDeviceId}_send_chain",
-        value: sendChainB64,
+        value: base64Encode(await sendChainKey.extractBytes()),
       );
       await keyProvider.secureStorage.write(
         key: "session_${pending.senderDeviceId}_recv_chain",
-        value: recvChainB64,
+        value: base64Encode(await recvChainKey.extractBytes()),
       );
       await keyProvider.secureStorage.write(
         key: "session_${pending.senderDeviceId}_ratchet_pub",
-        value: ratchetPubB64,
+        value: base64Encode(ratchetPub.bytes),
       );
       await keyProvider.secureStorage.write(
         key: "session_${pending.senderDeviceId}_ratchet_priv",
-        value: ratchetPrivB64,
+        value: base64Encode(ratchetPriv),
       );
+
+      // Initialize per-direction counters for the chain ratchet
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_send_counter",
+        value: "0",
+      );
+      await keyProvider.secureStorage.write(
+        key: "session_${pending.senderDeviceId}_recv_counter",
+        value: "0",
+      );
+
+      // (Optional but useful) remember the last remote DH ratchet pub if you have one
+      // If your init payload includes a sender ratchet pub, store it:
+      // await keyProvider.secureStorage.write(
+      //   key: "session_${pending.senderDeviceId}_last_remote_pub",
+      //   value: base64Encode(<sender_ratchet_pub_bytes>),
+      // );
+
       debugPrint(
-        '✅ Initialized ratchet session with ${pending.senderDeviceId}',
+        '✅ Initialized ratchet (receiver) with ${pending.senderDeviceId}',
       );
+
+      // Inform backend (metadata only)
       final session = Session(
         senderDeviceId: pending.senderDeviceId,
         receiverDeviceId: pending.recipientDeviceId,
@@ -239,8 +254,9 @@ class SessionService {
         updatedAt: DateTime.now(),
       );
       await uploadSession(session, pending);
-    } catch (e) {
-      debugPrint('Error initializing ratchet session: $e');
+    } catch (e, st) {
+      debugPrint('❌ Error initializing ratchet session: $e');
+      debugPrint(st.toString());
     }
   }
 }

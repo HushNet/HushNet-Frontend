@@ -132,5 +132,13 @@ class NodeService {
   Future<String?> getCurrentNodeUrl() async {
     return await _storage.read('node_url');
   }
+
+  Future<String?> getCurrentUserId() async {
+    return await _storage.read('user_id');
+  }
   
+  Future<String?> getCurrentDeviceId() async {
+    return await _storage.read('device_id');
+  }
+
 }

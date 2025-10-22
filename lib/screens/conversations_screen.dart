@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
+import 'package:hushnet_frontend/screens/chat_view_screen.dart';
 import 'package:hushnet_frontend/screens/user_list_screen.dart';
 import 'package:hushnet_frontend/services/chat_service.dart';
 import 'package:hushnet_frontend/services/session_service.dart';
@@ -14,6 +15,7 @@ class ConversationsScreen extends StatefulWidget {
 class _ConversationsScreenState extends State<ConversationsScreen> {
   final ChatService chatService = ChatService();
   int? _selectedIndex;
+  List<ChatView> _chats = [];
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +26,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       body: SafeArea(
         child: Row(
           children: [
-            // 🟢 LEFT: Chat list
+            // 🟢 Liste des conversations
             Expanded(
               flex: isDesktop ? 2 : 1,
               child: Container(
@@ -49,13 +51,13 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                               ),
                             );
                           }
-                          final chats = snapshot.data ?? [];
-                          if (chats.isEmpty) {
+                          _chats = snapshot.data ?? [];
+                          if (_chats.isEmpty) {
                             return const Center(
                               child: Text("No conversations yet", style: TextStyle(color: Colors.grey)),
                             );
                           }
-                          return _buildConversationList(chats);
+                          return _buildConversationList(_chats);
                         },
                       ),
                     ),
@@ -64,13 +66,18 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               ),
             ),
 
-            // 💬 RIGHT: chat content (only desktop)
+            // 💬 Conversation (desktop uniquement)
             if (isDesktop)
               Expanded(
                 flex: 4,
                 child: _selectedIndex == null
                     ? _buildEmptyChatPlaceholder()
-                    : _buildChatView(),
+                    : ChatViewScreen(
+                        chatId: _chats[_selectedIndex!].id,
+                        displayName: _chats[_selectedIndex!].displayName,
+                        embedded: true,
+                        chatView: _chats[_selectedIndex!],
+                      ),
               ),
           ],
         ),
@@ -126,18 +133,14 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         return InkWell(
           onTap: () {
             setState(() => _selectedIndex = index);
-
             if (MediaQuery.of(context).size.width <= 800) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => Scaffold(
-                    backgroundColor: const Color(0xFF101010),
-                    appBar: AppBar(
-                      backgroundColor: const Color(0xFF1C1C1C),
-                      title: Text(chat.displayName),
-                    ),
-                    body: _buildChatView(),
+                  builder: (_) => ChatViewScreen(
+                    chatId: chat.id,
+                    displayName: chat.displayName,
+                    chatView: chat,
                   ),
                 ),
               );
@@ -188,15 +191,6 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildChatView() {
-    return const Center(
-      child: Text(
-        "Chat view coming soon 💬",
-        style: TextStyle(color: Colors.grey),
-      ),
     );
   }
 
