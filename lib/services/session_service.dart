@@ -235,11 +235,6 @@ class SessionService {
       final session = Session(
         senderDeviceId: pending.senderDeviceId,
         receiverDeviceId: pending.recipientDeviceId,
-        rootKey: Uint8List.fromList(rootBytes),
-        ratchetPub: Uint8List.fromList(ratchetPub.bytes),
-        lastRemotePub: Uint8List.fromList(
-          base64Decode(pending.ephemeralPubkey),
-        ),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
