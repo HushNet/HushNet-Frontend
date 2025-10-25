@@ -133,7 +133,7 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
       final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
       final rootKey = await hkdf.deriveKey(
         secretKey: SecretKeyData(combined),
-        nonce: utf8.encode('HushNet-Salt'), // facultatif mais conseillé
+        nonce: utf8.encode('HushNet-Salt'),
         info: utf8.encode('X3DH Root Key'),
       );
       final sendChainKey = await hkdf.deriveKey(
@@ -148,13 +148,11 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
         info: utf8.encode('HushNet-Recv-Chain'),
       );
 
-      // 🧩 Génère ton propre ratchet keypair (X25519)
       final ratchetAlgo = X25519();
       final ratchetPair = await ratchetAlgo.newKeyPair();
       final ratchetPub = await ratchetPair.extractPublicKey();
       final ratchetPriv = await ratchetPair.extractPrivateKeyBytes();
 
-      // 🗄️ Sauvegarde dans SecureStorage
       final rootB64 = base64Encode(await rootKey.extractBytes());
       final sendB64 = base64Encode(await sendChainKey.extractBytes());
       final recvB64 = base64Encode(await recvChainKey.extractBytes());
