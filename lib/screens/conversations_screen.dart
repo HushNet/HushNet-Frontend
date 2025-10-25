@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:hushnet_frontend/data/node/sessions/create_session.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
 import 'package:hushnet_frontend/screens/chat_view_screen.dart';
 import 'package:hushnet_frontend/screens/user_list_screen.dart';
 import 'package:hushnet_frontend/services/chat_service.dart';
+import 'package:hushnet_frontend/services/node_service.dart';
 import 'package:hushnet_frontend/services/session_service.dart';
 
 class ConversationsScreen extends StatefulWidget {
@@ -117,6 +119,17 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               SessionService().processPendingSessions();
             },
             icon: const Icon(Icons.settings, color: Colors.white),
+          ),
+          IconButton(
+            onPressed: () async {
+              final NodeService nodeService = NodeService();
+              final String? nodeUrl = await nodeService.getCurrentNodeUrl();
+              final String? userId = await nodeService.getCurrentUserId();
+              if (nodeUrl == null || userId == null) return;
+
+              await createSession(nodeUrl, userId);
+            },
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
         ],
       ),

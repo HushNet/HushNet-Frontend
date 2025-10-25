@@ -259,4 +259,12 @@ class SessionService {
       debugPrint(st.toString());
     }
   }
+
+  Future<bool> hasSessionWithDevice(String deviceId) async {
+    final root = await secureStorage.read("session_${deviceId}_root");
+    final send = await secureStorage.read("session_${deviceId}_send_chain");
+    final recv = await secureStorage.read("session_${deviceId}_recv_chain");
+    return root != null && send != null && recv != null;
+  }
+  
 }

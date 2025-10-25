@@ -4,11 +4,14 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
+import 'package:hushnet_frontend/services/node_service.dart';
 
 /// Full X3DH + initial AES-GCM encrypt for each recipient device, then POST /sessions
 Future<bool> createSession(String nodeUrl, String recipientUserId) async {
   final keyProvider = KeyProvider();
   final dio = Dio();
+  final NodeService nodeService = NodeService();
+  final String currentDeviceId = await nodeService.getCurrentDeviceId() ?? '';
 
   try {
     // 1) load identity (Ed25519) and X25519 preKey (we use preKey as IK for DH)
@@ -33,6 +36,10 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
 
     // Loop on each device
     for (final device in devices) {
+      if (device.deviceId == currentDeviceId) {
+        // skip our own device
+        continue;
+      }
       // Parse recipient pubs from base64 -> bytes
       final recipientIdentityPub = base64Decode(device.prekeyPubkey); // must be X25519 bytes
       final recipientSpkPub = base64Decode(device.signedPrekeyPub);
