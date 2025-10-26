@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/data/node/sessions/create_session.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
@@ -10,7 +11,7 @@ import 'package:hushnet_frontend/services/node_service.dart';
 class ChatViewScreen extends StatefulWidget {
   final String chatId;
   final String displayName;
-  final bool embedded; // 👈 si affiché à droite (desktop)
+  final bool embedded;
   final ChatView chatView;
 
   const ChatViewScreen({
@@ -30,9 +31,10 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   final TextEditingController _controller = TextEditingController();
   List<MessageView> _messages = [];
   bool _loading = true;
-  late Timer _refreshTimer;
   final NodeService _nodeService = NodeService();
   String? _currentUserId;
+  final StreamController<List<MessageView>> _messageStreamController =
+      StreamController<List<MessageView>>.broadcast();
 
   @override
   void initState() {
@@ -42,17 +44,30 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         _currentUserId = id;
       });
     });
-    _loadMessages();
-    // auto refresh toutes les 10 secondes
-    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _loadMessages();
+
+    _loadMessages().then((_) {
+      _messageStreamController.add(_messages);
+    });
+
+    _nodeService.connectWebSocket().then((_) {
+      _nodeService.stream.listen((event) async {
+        if (!mounted) return;
+        if (event['payload']['type'] == 'message' &&
+            event['payload']['chat_id'] == widget.chatId) {
+          final newMessages = await messageService.getAllMessagesForChat(
+            widget.chatId,
+          );
+          _messages = newMessages;
+          _messageStreamController.add(_messages);
+        }
+      });
     });
   }
 
   @override
   void dispose() {
-    _refreshTimer.cancel();
     _controller.dispose();
+    _messageStreamController.close();
     super.dispose();
   }
 
@@ -121,16 +136,18 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       }
 
       // 5️⃣ Envoi du message
-      await messageService.sendMessage(
+      MessageView sentMsg = await messageService.sendMessage(
         chatId: widget.chatId,
         plaintext: text,
         recipientUserId: recipientUserId,
         recipientDeviceIds: devices.map((d) => d.deviceId).toList(),
       );
 
-      // 6️⃣ Reset input et refresh UI
+      _messages.add(sentMsg);
+      _messageStreamController.add(
+        List.from(_messages),
+      ); // push nouveau snapshot
       _controller.clear();
-      await _loadMessages();
     } catch (e) {
       debugPrint("❌ Error sending message: $e");
     }
@@ -168,6 +185,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
         builder: (context) {
+          debugPrint(msg.toJson().toString());
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -190,7 +208,24 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
                 const SizedBox(height: 6),
                 _infoRow("Algorithm", "AES-256-GCM"),
                 _infoRow("Key Exchange", "X3DH + Double Ratchet"),
-                _infoRow("Ciphertext Length", "${msg.ciphertext.length} bytes"),
+                if (msg.fromDeviceId == "SELF_DEVICE")
+                  _infoRow(
+                    "Local Ciphertext Length",
+                    "${msg.localCiphertext!.toString().length} bytes",
+                  ),
+                if (msg.fromDeviceId == "SELF_DEVICE")
+                  _infoRow("Local Ciphertext", msg.localCiphertext.toString()),
+                const Divider(color: Colors.grey),
+                if (msg.fromDeviceId != "SELF_DEVICE")
+                  _infoRow(
+                    "Ciphertext Length",
+                    "${msg.ciphertext.length} bytes",
+                  ),
+                if (msg.fromDeviceId != "SELF_DEVICE")
+                  _infoRow(
+                    "Ciphertext (bytes)",
+                    base64Decode(msg.ciphertext).toString(),
+                  ),
                 _infoRow("Session ID", widget.chatId),
                 const SizedBox(height: 12),
                 Center(
@@ -226,74 +261,82 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
             ],
           ),
         Expanded(
-          child: _loading
-              ? const Center(
+          child: StreamBuilder<List<MessageView>>(
+            stream: _messageStreamController.stream,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(
                   child: CircularProgressIndicator(color: Colors.greenAccent),
-                )
-              : _messages.isEmpty
-              ? const Center(
+                );
+              }
+
+              final messages = snapshot.data!;
+              if (messages.isEmpty) {
+                return const Center(
                   child: Text(
                     "No messages yet 💬",
                     style: TextStyle(color: Colors.grey),
                   ),
-                )
-              : ListView.builder(
-                  reverse: false,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _messages[index];
-                    final isMe = msg.fromUserId == _currentUserId;
+                );
+              }
 
-                    return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        textDirection: isMe
-                            ? TextDirection.rtl
-                            : TextDirection.ltr, // 🔁 pour aligner correctement
-                        children: [
-                          Container(
-                            margin: const EdgeInsets.symmetric(
-                              vertical: 4,
-                              horizontal: 4,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isMe
-                                  ? Colors.greenAccent
-                                  : const Color(0xFF2A2A2A),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              msg.ciphertext,
-                              style: TextStyle(
-                                color: isMe ? Colors.black : Colors.white,
-                              ),
+              return ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: messages.length,
+                itemBuilder: (context, index) {
+                  final msg = messages[index];
+                  final isMe = msg.fromUserId == _currentUserId;
+
+                  return Align(
+                    alignment: isMe
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      textDirection: isMe
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 4,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isMe
+                                ? Colors.greenAccent
+                                : const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            msg.decryptedText,
+                            style: TextStyle(
+                              color: isMe ? Colors.black : Colors.white,
                             ),
                           ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.info_outline,
-                              color: isMe
-                                  ? Colors.greenAccent
-                                  : Colors.grey[400],
-                              size: 18,
-                            ),
-                            onPressed: () => _showMessageInfo(context, msg),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.info_outline,
+                            color: isMe ? Colors.greenAccent : Colors.grey[400],
+                            size: 18,
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                          onPressed: () => _showMessageInfo(context, msg),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
+
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: const BoxDecoration(

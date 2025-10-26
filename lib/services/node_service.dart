@@ -81,7 +81,7 @@ class NodeService {
         await _storage.write('username', username);
         await _storage.write('user_id', userId);
         await _storage.write('node_url', nodeUrl);
-        await connectWebSocket(nodeUrl, userId);
+        await connectWebSocket();
         return username;
       } else {
         log.severe('Login failed: ${response.statusCode} ${response.data}');
@@ -127,7 +127,7 @@ class NodeService {
         final deviceKey = data['device_key'];
         await _storage.write('device_id', deviceId);
         await _storage.write('device_key', deviceKey);
-        await connectWebSocket(nodeUrl, userId);
+        await connectWebSocket();
         stepNotifier?.value = 8;
 
         return true;
@@ -151,7 +151,13 @@ class NodeService {
   Future<String?> getCurrentDeviceId() async {
     return await _storage.read('device_id');
   }
-Future<void> connectWebSocket(String nodeUrl, String userId) async {
+Future<void> connectWebSocket() async {
+  final nodeUrl = await getCurrentNodeUrl();
+  final userId = await getCurrentUserId();
+  if (nodeUrl == null || userId == null) {
+    debugPrint("Cannot connect WS: missing nodeUrl or userId");
+    return;
+  }
   if (_connectedUserId == userId && _channel != null) {
     debugPrint("🔁 WebSocket already connected for $userId");
     return;
@@ -203,7 +209,7 @@ Future<void> connectWebSocket(String nodeUrl, String userId) async {
   void _retry(String nodeUrl, String userId) {
     Future.delayed(const Duration(seconds: 3), () {
       if (_connectedUserId == userId) {
-        connectWebSocket(nodeUrl, userId);
+        connectWebSocket();
       }
     });
   }

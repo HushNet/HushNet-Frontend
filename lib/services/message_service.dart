@@ -63,15 +63,18 @@ class MessageService {
         }
 
         // Ajouter le nouveau message déchiffré
-        existingMessages.add({
-          "id": msg.id,
-          "from_user_id": msg.fromUserId,
-          "chat_id": msg.chatId,
-          "text": plaintext,
-          "from_device_id": msg.fromDeviceId,
-          "logical_msg_id": msg.logicalMsgId,
-          "created_at": msg.createdAt.toIso8601String(),
-        });
+        MessageView decryptedMsg = MessageView(
+          id: msg.id,
+          logicalMsgId: msg.logicalMsgId,
+          chatId: msg.chatId,
+          fromUserId: msg.fromUserId,
+          fromDeviceId: msg.fromDeviceId,
+          decryptedText: plaintext,
+          ciphertext: msg.ciphertext,
+          createdAt: msg.createdAt,
+          pending: false,
+        );
+        existingMessages.add(decryptedMsg.toJson());
 
         // Réécrire dans SecureStorage
         await secureStorage.write(
@@ -99,16 +102,7 @@ class MessageService {
       final list = jsonDecode(existingRaw) as List;
       localMessages = list
           .map(
-            (m) => MessageView(
-              id: m["id"],
-              logicalMsgId: m["logical_msg_id"],
-              chatId: m["chat_id"],
-              fromUserId: m["from_user_id"],
-              fromDeviceId: m["from_device_id"],
-              ciphertext: m["text"], // ici plaintext stocké
-              createdAt: DateTime.parse(m["created_at"]),
-              pending: m["pending"] ?? false,
-            ),
+            (m) => MessageView.fromJson(m),
           )
           .toList();
     }
@@ -137,7 +131,8 @@ class MessageService {
               chatId: msg.chatId,
               fromUserId: msg.fromUserId,
               fromDeviceId: msg.fromDeviceId,
-              ciphertext: plaintext, // déchiffré
+              ciphertext: msg.ciphertext,
+              decryptedText: plaintext, // déchiffré
               createdAt: msg.createdAt,
               pending: false,
             ),
@@ -154,16 +149,7 @@ class MessageService {
     // 4️⃣ Réécrire la version fusionnée dans le SecureStorage
     final mergedJson = localMessages
         .map(
-          (m) => {
-            "id": m.id,
-            "logical_msg_id": m.logicalMsgId,
-            "chat_id": m.chatId,
-            "from_user_id": m.fromUserId,
-            "from_device_id": m.fromDeviceId,
-            "text": m.ciphertext,
-            "created_at": m.createdAt.toIso8601String(),
-            "pending": m.pending ?? false,
-          },
+          (m) => m.toJson(),
         )
         .toList();
     await secureStorage.write(
@@ -174,7 +160,7 @@ class MessageService {
     return localMessages;
   }
 
-  Future<void> sendMessage({
+  Future<MessageView> sendMessage({
     required String chatId,
     required String plaintext,
     required String recipientUserId,
@@ -184,16 +170,17 @@ class MessageService {
     final logicalMsgId = const Uuid().v4();
     final List<Map<String, dynamic>> payloads = [];
     final FlutterSecureStorage storage = keyProvider.secureStorage;
-    final localMessage = {
+    Map<String, dynamic> localMessage = {
       "id": const Uuid().v4(),
       "logical_msg_id": logicalMsgId,
       "chat_id": chatId,
       "from_user_id": await nodeService.getCurrentUserId(),
       "from_device_id": "SELF_DEVICE", // placeholder
-      "text": plaintext,
+      "decrypted_text": plaintext,
       "created_at": DateTime.now().toUtc().toIso8601String(),
       "pending": true, // flag utile si jamais l’envoi échoue
     };
+    List<String> ciphertexts = [];
 
     final existingRaw = await storage.read(key: "messages_$chatId");
     List<Map<String, dynamic>> existingMessages = [];
@@ -222,6 +209,7 @@ class MessageService {
         plaintext,
         peerDeviceId,
       );
+      ciphertexts.add(ciphertext);
 
       // 🔹 Pubkey du ratchet courant
       final ratchetPub = await keyProvider.getLocalRatchetPub(peerDeviceId);
@@ -266,11 +254,12 @@ class MessageService {
         }
         await storage.write(key: "messages_$chatId", value: jsonEncode(msgs));
       }
+      print("✅ Message envoyé à ${recipientDeviceIds.length} device(s)");
+      localMessage["local_ciphertext"] = ciphertexts;
+      return MessageView.fromJson(localMessage);
     } catch (e) {
       print("❌ Failed to send message to $recipientUserId: $e");
-      return;
+      rethrow;
     }
-
-    print("✅ Message envoyé à ${recipientDeviceIds.length} device(s)");
   }
 }

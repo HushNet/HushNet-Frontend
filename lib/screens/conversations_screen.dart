@@ -16,8 +16,23 @@ class ConversationsScreen extends StatefulWidget {
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   final ChatService chatService = ChatService();
+  final NodeService nodeService = NodeService();
   int? _selectedIndex;
   List<ChatView> _chats = [];
+
+  @override
+  void initState() {
+    nodeService.connectWebSocket().then((_) {
+      nodeService.stream.listen((event) {
+        if (!mounted) return;
+        if (event['event_type'] == 'session') {
+          setState(() {
+        });
+        }
+      });
+    });
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
