@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,8 @@ import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/secure_storage_service.dart';
 import 'package:dio/dio.dart';
 import 'package:logging/logging.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/status.dart' as status;
 
 class NodeService {
   static final NodeService _instance = NodeService._internal();
@@ -16,6 +19,12 @@ class NodeService {
   final log = Logger('NodeService');
   final KeyProvider _keyProvider = KeyProvider();
   
+  WebSocketChannel? _channel;
+  StreamSubscription? _subscription;
+  String? _connectedUserId;
+  final _controller = StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get stream => _controller.stream;
 
 
 
@@ -72,6 +81,7 @@ class NodeService {
         await _storage.write('username', username);
         await _storage.write('user_id', userId);
         await _storage.write('node_url', nodeUrl);
+        await connectWebSocket(nodeUrl, userId);
         return username;
       } else {
         log.severe('Login failed: ${response.statusCode} ${response.data}');
@@ -117,7 +127,8 @@ class NodeService {
         final deviceKey = data['device_key'];
         await _storage.write('device_id', deviceId);
         await _storage.write('device_key', deviceKey);
-                stepNotifier?.value = 8;
+        await connectWebSocket(nodeUrl, userId);
+        stepNotifier?.value = 8;
 
         return true;
       } else {
@@ -139,6 +150,70 @@ class NodeService {
   
   Future<String?> getCurrentDeviceId() async {
     return await _storage.read('device_id');
+  }
+Future<void> connectWebSocket(String nodeUrl, String userId) async {
+  if (_connectedUserId == userId && _channel != null) {
+    debugPrint("🔁 WebSocket already connected for $userId");
+    return;
+  }
+
+  var clean = nodeUrl.trim().replaceAll('#', '');
+  final parsed = Uri.parse(clean);
+
+  final scheme = (parsed.scheme == 'https' || parsed.scheme == 'wss')
+      ? 'wss'
+      : 'ws';
+
+  final host = parsed.host;
+  final port = parsed.hasPort ? ':${parsed.port}' : '';
+
+  final wsUrl = Uri.parse("$scheme://$host$port/ws/$userId");
+  debugPrint("Connecting WS to $wsUrl with $userId");
+
+  try {
+    _channel = WebSocketChannel.connect(wsUrl);
+    debugPrint("WS connected for $userId");
+    _connectedUserId = userId;
+
+    _subscription = _channel!.stream.listen(
+      (event) {
+        try {
+          final decoded = jsonDecode(event);
+          _controller.add(decoded);
+          debugPrint("WS event: $decoded");
+        } catch (e) {
+          debugPrint("Invalid WS payload: $e");
+        }
+      },
+      onError: (err) {
+        debugPrint("WS error: $err");
+        _retry(nodeUrl, userId);
+      },
+      onDone: () {
+        debugPrint("WS closed for $userId");
+        _retry(nodeUrl, userId);
+      },
+    );
+  } catch (e) {
+    debugPrint("Failed to connect WebSocket: $e");
+    _retry(nodeUrl, userId);
+  }
+}
+
+  void _retry(String nodeUrl, String userId) {
+    Future.delayed(const Duration(seconds: 3), () {
+      if (_connectedUserId == userId) {
+        connectWebSocket(nodeUrl, userId);
+      }
+    });
+  }
+
+  void disconnectWebSocket() {
+    //TODO : Implement disconnect logic
+    debugPrint("Closing WS connection...");
+    _subscription?.cancel();
+    _channel?.sink.close(status.normalClosure);
+    _connectedUserId = null;
   }
 
 }
