@@ -26,7 +26,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     nodeService.connectWebSocket().then((_) {
       nodeService.stream.listen((event) {
         if (!mounted) return;
-        if (event['event_type'] == 'session') {
+        if (event['event_type'] == 'session' ||
+            event['event_type'] == 'pending_session') {
           setState(() {});
         }
       });
@@ -77,7 +78,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                             );
                           }
 
-                          List<ChatView> chats = snapshot.data?[0] as List<ChatView>? ?? [];
+                          List<ChatView> chats =
+                              snapshot.data?[0] as List<ChatView>? ?? [];
+                          _chats = List.from(chats);
                           int pendingCount = snapshot.data?[1] as int? ?? 0;
 
                           if (chats.isEmpty && pendingCount == 0) {
@@ -160,8 +163,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             icon: const Icon(Icons.add, color: Colors.white),
           ),
           IconButton(
-            onPressed: () {
-            },
+            onPressed: () {},
             icon: const Icon(Icons.settings, color: Colors.white),
           ),
           IconButton(
