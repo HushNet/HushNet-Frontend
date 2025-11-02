@@ -1,3 +1,5 @@
+import 'package:hushnet_frontend/models/users.dart';
+
 class PendingSession {
   final String id;
   final String senderDeviceId;
@@ -6,7 +8,8 @@ class PendingSession {
   final String ciphertext; // base64
   final String? senderPrekeyPub; // base64 (nécessaire pour DH1)
   final String createdAt;
-
+  User? senderUser;
+  
   PendingSession({
     required this.id,
     required this.senderDeviceId,
@@ -14,6 +17,7 @@ class PendingSession {
     required this.ephemeralPubkey,
     required this.ciphertext,
     required this.createdAt,
+    this.senderUser,
     this.senderPrekeyPub,
   });
 
