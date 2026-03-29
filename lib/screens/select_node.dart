@@ -55,7 +55,11 @@ class SelectNodeScreen extends StatelessWidget {
                 label: "Connect",
                 icon: Icons.link,
                 onPressed: () {
-                  final nodeAddress = _nodeController.text.trim();
+                  String nodeAddress = _nodeController.text.trim();
+                  // Remove trailing slash if present
+                  if (nodeAddress.endsWith('/')) {
+                    nodeAddress = nodeAddress.substring(0, nodeAddress.length - 1);
+                  }
                   if (nodeAddress.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Please enter a node URL')),

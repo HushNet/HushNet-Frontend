@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hushnet_frontend/models/pending_sessions.dart';
 import 'package:hushnet_frontend/models/session.dart';
+import 'package:hushnet_frontend/models/users.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
 import 'package:hushnet_frontend/services/secure_storage_service.dart';
@@ -23,10 +24,29 @@ class SessionService {
     );
     final data = req.data;
     final List sessions = (data is List) ? data : (data['sessions'] ?? []);
+
     return sessions.map((s) => PendingSession.fromJson(s)).toList();
   }
 
-  Future<void> processPendingSessions() async {
+  Future<int> getPendingSessionsCount() async {
+    final sessions = await getPendingSessions();
+    return sessions.length;
+  }
+
+  Future<void> getUserForSession(PendingSession session) async {
+    final String? nodeUrl = await nodeService.getCurrentNodeUrl();
+    final req = await keyProvider.sendSignedRequest(
+      "GET",
+      "$nodeUrl/devices/${session.senderDeviceId}/user",
+    );
+    final data = req.data;
+    print('User data for device ${session.senderDeviceId}: $data');
+    if (data != null) {
+      session.senderUser = User.fromJson(data);
+    }
+  }
+
+  Future<void> processPendingSessions(String? sessionId) async {
     final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
     final aes = AesGcm.with256bits();
     final x25519 = X25519();
@@ -41,6 +61,9 @@ class SessionService {
     }
 
     final pendingSessions = await getPendingSessions();
+    if (sessionId != null) {
+      pendingSessions.removeWhere((s) => s.id != sessionId);
+    }
 
     for (final p in pendingSessions) {
       try {
@@ -266,5 +289,4 @@ class SessionService {
     final recv = await secureStorage.read("session_${deviceId}_recv_chain");
     return root != null && send != null && recv != null;
   }
-  
 }

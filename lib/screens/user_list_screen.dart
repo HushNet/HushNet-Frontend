@@ -30,6 +30,9 @@ class _UserListScreenState extends State<UserListScreen> {
     try {
       final nodeUrl = await _nodeService.getCurrentNodeUrl();
       final users = await fetchUsers(nodeUrl!);
+      // Exclude self from user list
+      final userId = await _nodeService.getCurrentUserId();
+      users.removeWhere((user) => user.id == userId);
       setState(() {
         _allUsers = users;
         _filteredUsers = users;
@@ -70,8 +73,10 @@ class _UserListScreenState extends State<UserListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("Cancel",
-                style: GoogleFonts.inter(color: Colors.grey[400])),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.inter(color: Colors.grey[400]),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -93,8 +98,7 @@ class _UserListScreenState extends State<UserListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor:
-              success ? const Color(0xFF3A8DFF) : Colors.redAccent,
+          backgroundColor: success ? const Color(0xFF3A8DFF) : Colors.redAccent,
           content: Text(
             success
                 ? "Session started with ${user.username}"
@@ -115,9 +119,13 @@ class _UserListScreenState extends State<UserListScreen> {
       backgroundColor: const Color(0xFF0D0D0D),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D0D0D),
-        title: Text("Users",
-            style: GoogleFonts.inter(
-                color: Colors.white, fontWeight: FontWeight.w600)),
+        title: Text(
+          "Users",
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -144,37 +152,47 @@ class _UserListScreenState extends State<UserListScreen> {
                           ),
                         )
                       : _filteredUsers.isEmpty
-                          ? Center(
-                              child: Text("No users found",
-                                  style: GoogleFonts.inter(
-                                      color: Colors.white70, fontSize: 16)),
-                            )
-                          : ListView.builder(
-                              itemCount: _filteredUsers.length,
-                              itemBuilder: (_, i) {
-                                final user = _filteredUsers[i];
-                                return Card(
-                                  color: const Color(0xFF1E1E1E),
-                                  margin:
-                                      const EdgeInsets.symmetric(vertical: 6),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: ListTile(
-                                    onTap: () => _onUserTap(user),
-                                    title: Text(
-                                      user.username,
-                                      style: GoogleFonts.inter(
-                                          color: Colors.white, fontSize: 16),
-                                    ),
-                                    leading: const Icon(Icons.person,
-                                        color: Color(0xFF3A8DFF)),
-                                    trailing: const Icon(Icons.arrow_forward_ios,
-                                        color: Colors.white24, size: 16),
-                                  ),
-                                );
-                              },
+                      ? Center(
+                          child: Text(
+                            "No users found",
+                            style: GoogleFonts.inter(
+                              color: Colors.white70,
+                              fontSize: 16,
                             ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _filteredUsers.length,
+                          itemBuilder: (_, i) {
+                            final user = _filteredUsers[i];
+                            return Card(
+                              color: const Color(0xFF1E1E1E),
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: ListTile(
+                                onTap: () => _onUserTap(user),
+                                title: Text(
+                                  user.username,
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                leading: const Icon(
+                                  Icons.person,
+                                  color: Color(0xFF3A8DFF),
+                                ),
+                                trailing: const Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: Colors.white24,
+                                  size: 16,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ],
             ),

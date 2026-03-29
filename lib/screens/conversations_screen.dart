@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/data/node/sessions/create_session.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
 import 'package:hushnet_frontend/screens/chat_view_screen.dart';
+import 'package:hushnet_frontend/screens/pending_sessions_screen.dart';
 import 'package:hushnet_frontend/screens/user_list_screen.dart';
 import 'package:hushnet_frontend/services/chat_service.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
@@ -25,9 +26,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     nodeService.connectWebSocket().then((_) {
       nodeService.stream.listen((event) {
         if (!mounted) return;
-        if (event['event_type'] == 'session') {
-          setState(() {
-        });
+        if (event['event_type'] == 'session' ||
+            event['event_type'] == 'pending_session') {
+          setState(() {});
         }
       });
     });
@@ -52,14 +53,22 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   children: [
                     _buildHeader(),
                     Expanded(
-                      child: FutureBuilder<List<ChatView>>(
-                        future: chatService.getChats(),
+                      child: FutureBuilder(
+                        future: Future.wait([
+                          chatService.getChats(),
+                          SessionService()
+                              .getPendingSessionsCount(), // 🧠 nouvelle méthode simple
+                        ]),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return const Center(
-                              child: CircularProgressIndicator(color: Colors.greenAccent),
+                              child: CircularProgressIndicator(
+                                color: Colors.greenAccent,
+                              ),
                             );
                           }
+
                           if (snapshot.hasError) {
                             return Center(
                               child: Text(
@@ -68,13 +77,37 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                               ),
                             );
                           }
-                          _chats = snapshot.data ?? [];
-                          if (_chats.isEmpty) {
+
+                          List<ChatView> chats =
+                              snapshot.data?[0] as List<ChatView>? ?? [];
+                          _chats = List.from(chats);
+                          int pendingCount = snapshot.data?[1] as int? ?? 0;
+
+                          if (chats.isEmpty && pendingCount == 0) {
                             return const Center(
-                              child: Text("No conversations yet", style: TextStyle(color: Colors.grey)),
+                              child: Text(
+                                "No conversations yet",
+                                style: TextStyle(color: Colors.grey),
+                              ),
                             );
                           }
-                          return _buildConversationList(_chats);
+
+                          return Column(
+                            children: [
+                              if (pendingCount > 0)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  child: _buildPendingButton(
+                                    context,
+                                    pendingCount,
+                                  ),
+                                ),
+                              Expanded(child: _buildConversationList(chats)),
+                            ],
+                          );
                         },
                       ),
                     ),
@@ -123,16 +156,14 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           const Spacer(),
           IconButton(
             onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const UserListScreen(),
-              ));
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const UserListScreen()));
             },
             icon: const Icon(Icons.add, color: Colors.white),
           ),
           IconButton(
-            onPressed: () {
-              SessionService().processPendingSessions();
-            },
+            onPressed: () {},
             icon: const Icon(Icons.settings, color: Colors.white),
           ),
           IconButton(
@@ -147,6 +178,38 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             icon: const Icon(Icons.refresh, color: Colors.white),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPendingButton(BuildContext context, int count) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PendingSessionsScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF222222),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.greenAccent.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.key, color: Colors.greenAccent, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              "Pending sessions ($count)",
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -197,10 +260,13 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(chat.displayName,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600)),
+                      Text(
+                        chat.displayName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         chat.previewText,
