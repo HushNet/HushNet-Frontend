@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:hushnet_frontend/models/node.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> connectToNode(
@@ -37,5 +38,24 @@ Future<void> connectToNode(
   if (errorNotifier.value == false) {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString('node_address', nodeAddress);
+  }
+}
+
+Future<List<Node>> fetchNodes() async {
+  final dio = Dio();
+  try {
+    final response = await dio.get('https://registry.hushnet.net/api/nodes');
+    if (response.statusCode == 200) {
+      final List<dynamic> nodesJson = response.data['nodes'] ?? [];
+      final List<Node> nodes = nodesJson
+          .map((nodeJson) => Node.fromJson(nodeJson))
+          .toList();
+      return nodes;
+    } else {
+      throw Exception('Failed to load nodes');
+    }
+  } catch (e) {
+    log('Error fetching nodes: $e');
+    throw Exception('Failed to load nodes');
   }
 }
