@@ -231,9 +231,10 @@ class KeyProvider {
   Future<List<UserDevice>> getRemoteUserDevicesKeys(String federatedAddress) async {
     final nodeUrl = await _storage.read(key: 'node_url');
     try {
+      final encoded = Uri.encodeComponent(federatedAddress);
       final response = await sendSignedRequest(
         'GET',
-        '$nodeUrl/users/federated/$federatedAddress/keys',
+        '$nodeUrl/users/federated/$encoded/keys',
       );
       final data = response.data;
       final List devicesJson = (data is List) ? data : (data['devices'] ?? []);
