@@ -6,8 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
 
-/// Full X3DH + initial AES-GCM encrypt for each recipient device, then POST /sessions
-Future<bool> createSession(String nodeUrl, String recipientUserId) async {
+/// Full X3DH + initial AES-GCM encrypt for each recipient device, then POST /sessions.
+///
+/// Pass [recipientUserAddress] (e.g. "bob@node-b.hushnet.net") for federated
+/// users. The local node proxies key fetching and session forwarding.
+/// [recipientUserId] is ignored server-side for remote recipients; pass the
+/// nil UUID as a placeholder when you only have the federated address.
+Future<bool> createSession(
+  String nodeUrl,
+  String recipientUserId, {
+  String? recipientUserAddress,
+}) async {
   final keyProvider = KeyProvider();
   final dio = Dio();
   final NodeService nodeService = NodeService();
@@ -22,8 +31,11 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
       throw Exception('Missing identity or prekey on client');
     }
 
-    // 2) get recipient devices (assumes these return X25519 pubs)
-    final devices = await keyProvider.getUserDevicesKeys(recipientUserId);
+    // 2) get recipient devices — federated path uses the proxy endpoint
+    final devices = recipientUserAddress != null
+        ? await keyProvider.getRemoteUserDevicesKeys(recipientUserAddress)
+        : await keyProvider.getUserDevicesKeys(recipientUserId);
+
     if (devices.isEmpty) {
       debugPrint('No devices for recipient');
       return false;
@@ -192,7 +204,7 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
       final nonce = aes.newNonce();
       final plaintext = utf8.encode(
         'HushNet initial session message',
-      ); // customize initial message as needed
+      );
       final secretBox = await aes.encrypt(
         plaintext,
         secretKey: rootKey,
@@ -245,6 +257,8 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
 
     final payload = {
       'recipient_user_id': recipientUserId,
+      if (recipientUserAddress != null)
+        'recipient_user_address': recipientUserAddress,
       'sessions_init': sessionsInit,
     };
 
@@ -254,7 +268,8 @@ Future<bool> createSession(String nodeUrl, String recipientUserId) async {
       options: Options(headers: headers),
     );
 
-    if (res.statusCode == 200 || res.statusCode == 201) {
+    // 202 means the session was forwarded to the remote node — treat as success
+    if (res.statusCode == 200 || res.statusCode == 201 || res.statusCode == 202) {
       return true;
     } else {
       debugPrint('CreateSessionFull failed http: ${res.statusCode} ${res.data}');

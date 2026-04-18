@@ -226,6 +226,28 @@ class KeyProvider {
     }
   }
 
+  // Fetches key bundles for a remote federated user via the local node proxy.
+  // Uses the signed-request path so auth headers are included.
+  Future<List<UserDevice>> getRemoteUserDevicesKeys(String federatedAddress) async {
+    final nodeUrl = await _storage.read(key: 'node_url');
+    try {
+      final response = await sendSignedRequest(
+        'GET',
+        '$nodeUrl/users/federated/$federatedAddress/keys',
+      );
+      final data = response.data;
+      final List devicesJson = (data is List) ? data : (data['devices'] ?? []);
+      return devicesJson
+          .map<UserDevice>((json) => UserDevice.fromFederatedJson(json))
+          .toList();
+    } on DioException catch (e) {
+      debugPrint("Error fetching remote user devices: $e");
+      final status = e.response?.statusCode ?? 0;
+      final message = e.response?.data ?? e.message;
+      throw Exception('Failed to fetch remote user keys (HTTP $status): $message');
+    }
+  }
+
   Future<Response> sendSignedRequest(
     String method,
     String url, {

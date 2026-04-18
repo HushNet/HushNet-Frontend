@@ -28,6 +28,28 @@ class UserDevice {
     );
   }
 
+  // Federated endpoint returns a slightly different shape:
+  //   device_id, identity_pubkey, signed_prekey_pub, signed_prekey_sig,
+  //   one_time_prekeys: ["base64", ...]  (strings, not objects)
+  factory UserDevice.fromFederatedJson(Map<String, dynamic> json) {
+    final otpks = json['one_time_prekeys'];
+    String? otpk;
+    if (otpks is List && otpks.isNotEmpty) {
+      final first = otpks[0];
+      otpk = first is String ? first : (first is Map ? first['key'] as String? : null);
+    }
+    return UserDevice(
+      deviceId: json['device_id'] ?? json['id'],
+      identityPubkey: json['identity_pubkey'],
+      // Federated bundle may omit prekey_pubkey; fall back to identity_pubkey
+      // so X3DH can still proceed (IK_B = identity_pubkey in X25519 form).
+      prekeyPubkey: json['prekey_pubkey'] ?? json['identity_pubkey'],
+      signedPrekeyPub: json['signed_prekey_pub'],
+      signedPrekeySig: json['signed_prekey_sig'],
+      oneTimePrekeyPub: otpk,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'device_id': deviceId,
         'prekey_pubkey': prekeyPubkey,

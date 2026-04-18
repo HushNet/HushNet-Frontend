@@ -194,7 +194,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF222222),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.greenAccent.withOpacity(0.3)),
+          border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -260,17 +260,62 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        chat.displayName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              chat.displayName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (chat.isRemote) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF3A8DFF).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: const Color(0xFF3A8DFF).withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.public, color: Color(0xFF3A8DFF), size: 10),
+                                  SizedBox(width: 2),
+                                  Text(
+                                    "ext",
+                                    style: TextStyle(
+                                      color: Color(0xFF3A8DFF),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        chat.previewText,
-                        style: TextStyle(color: Colors.grey[400]),
+                        chat.isRemote
+                            ? chat.federatedAddress!
+                            : chat.previewText,
+                        style: TextStyle(
+                          color: chat.isRemote
+                              ? const Color(0xFF3A8DFF).withValues(alpha: 0.8)
+                              : Colors.grey[400],
+                          fontSize: 12,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
