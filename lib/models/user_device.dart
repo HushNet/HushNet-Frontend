@@ -22,9 +22,12 @@ class UserDevice {
       deviceId: json['id'] ?? json['device_id'],
       identityPubkey: json['identity_pubkey'],
       prekeyPubkey: json['prekey_pubkey'] ?? json['prekey']?['key'],
-      signedPrekeyPub: json['signed_prekey_pub'] ?? json['signed_prekey']?['key'],
-      signedPrekeySig: json['signed_prekey_sig'] ?? json['signed_prekey']?['signature'],
-      oneTimePrekeyPub: json['one_time_prekeys'][0] ?? json['one_time_prekey']?['key'],
+      signedPrekeyPub:
+          json['signed_prekey_pub'] ?? json['signed_prekey']?['key'],
+      signedPrekeySig:
+          json['signed_prekey_sig'] ?? json['signed_prekey']?['signature'],
+      oneTimePrekeyPub:
+          json['one_time_prekeys'][0] ?? json['one_time_prekey']?['key'],
     );
   }
 
@@ -36,14 +39,14 @@ class UserDevice {
     String? otpk;
     if (otpks is List && otpks.isNotEmpty) {
       final first = otpks[0];
-      otpk = first is String ? first : (first is Map ? first['key'] as String? : null);
+      otpk = first is String
+          ? first
+          : (first is Map ? first['key'] as String? : null);
     }
     return UserDevice(
       deviceId: json['device_id'] ?? json['id'],
       identityPubkey: json['identity_pubkey'],
-      // Federated bundle may omit prekey_pubkey; fall back to identity_pubkey
-      // so X3DH can still proceed (IK_B = identity_pubkey in X25519 form).
-      prekeyPubkey: json['prekey_pubkey'] ?? json['identity_pubkey'],
+      prekeyPubkey: json['prekey_pubkey'],
       signedPrekeyPub: json['signed_prekey_pub'],
       signedPrekeySig: json['signed_prekey_sig'],
       oneTimePrekeyPub: otpk,
@@ -51,13 +54,13 @@ class UserDevice {
   }
 
   Map<String, dynamic> toJson() => {
-        'device_id': deviceId,
-        'prekey_pubkey': prekeyPubkey,
-        'identity_pubkey': identityPubkey,
-        'signed_prekey_pub': signedPrekeyPub,
-        'signed_prekey_sig': signedPrekeySig,
-        'one_time_prekey_pub': oneTimePrekeyPub,
-      };
+    'device_id': deviceId,
+    'prekey_pubkey': prekeyPubkey,
+    'identity_pubkey': identityPubkey,
+    'signed_prekey_pub': signedPrekeyPub,
+    'signed_prekey_sig': signedPrekeySig,
+    'one_time_prekey_pub': oneTimePrekeyPub,
+  };
 
   @override
   String toString() => jsonEncode(toJson());

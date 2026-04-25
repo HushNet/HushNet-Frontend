@@ -7,9 +7,10 @@ class PendingSession {
   final String ephemeralPubkey; // base64
   final String ciphertext; // base64
   final String? senderPrekeyPub; // base64 (nécessaire pour DH1)
+  final String? otpkUsed; // base64 public key of the OPK Alice used
   final String createdAt;
   User? senderUser;
-  
+
   PendingSession({
     required this.id,
     required this.senderDeviceId,
@@ -19,6 +20,7 @@ class PendingSession {
     required this.createdAt,
     this.senderUser,
     this.senderPrekeyPub,
+    this.otpkUsed,
   });
 
   factory PendingSession.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,9 @@ class PendingSession {
       ciphertext: json['ciphertext'],
       createdAt: json['created_at'] ?? '',
       senderPrekeyPub: json['sender_prekey_pub'],
+      otpkUsed: json['otpk_used'] is String && (json['otpk_used'] as String).isNotEmpty
+          ? json['otpk_used']
+          : null,
     );
   }
 }

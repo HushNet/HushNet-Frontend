@@ -3,6 +3,7 @@ import 'package:hushnet_frontend/data/node/sessions/create_session.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
 import 'package:hushnet_frontend/screens/chat_view_screen.dart';
 import 'package:hushnet_frontend/screens/pending_sessions_screen.dart';
+import 'package:hushnet_frontend/screens/settings_screen.dart';
 import 'package:hushnet_frontend/screens/user_list_screen.dart';
 import 'package:hushnet_frontend/services/chat_service.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
@@ -156,14 +157,25 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           const Spacer(),
           IconButton(
             onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const UserListScreen()));
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => UserListScreen(
+                    existingPartnerIds: _chats
+                        .map((c) => c.partnerUserId)
+                        .whereType<String>()
+                        .toSet(),
+                  ),
+                ),
+              );
             },
             icon: const Icon(Icons.add, color: Colors.white),
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
             icon: const Icon(Icons.settings, color: Colors.white),
           ),
           IconButton(

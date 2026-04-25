@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hushnet_frontend/models/chat_view.dart';
 import 'package:hushnet_frontend/models/message_view.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
@@ -28,9 +29,13 @@ class ChatViewScreen extends StatefulWidget {
 class _ChatViewScreenState extends State<ChatViewScreen> {
   final MessageService messageService = MessageService();
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
+  final FocusNode _inputFocus = FocusNode();
   List<MessageView> _messages = [];
   final NodeService _nodeService = NodeService();
   String? _currentUserId;
+  bool _wsConnected = true;
+  StreamSubscription? _connSub;
   final StreamController<List<MessageView>> _messageStreamController =
       StreamController<List<MessageView>>.broadcast();
 
@@ -39,14 +44,21 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
   @override
   void initState() {
     super.initState();
+
+    _wsConnected = _nodeService.isConnected;
+    _connSub = _nodeService.connectionState.listen((connected) {
+      if (!mounted) return;
+      setState(() => _wsConnected = connected);
+    });
+
     _nodeService.getCurrentUserId().then((id) {
-      setState(() {
-        _currentUserId = id;
-      });
+      if (!mounted) return;
+      setState(() => _currentUserId = id);
     });
 
     _loadMessages().then((_) {
       _messageStreamController.add(_messages);
+      _scrollToBottom();
     });
 
     _nodeService.connectWebSocket().then((_) {
@@ -59,6 +71,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           );
           _messages = newMessages;
           _messageStreamController.add(_messages);
+          _scrollToBottom();
         }
       });
     });
@@ -66,9 +79,24 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   @override
   void dispose() {
+    _connSub?.cancel();
     _controller.dispose();
+    _scrollCtrl.dispose();
+    _inputFocus.dispose();
     _messageStreamController.close();
     super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> _loadMessages() async {
@@ -78,9 +106,14 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         final s = d.toIso8601String();
         if (!s.endsWith('Z') && !s.contains('+')) {
           return DateTime.utc(
-            d.year, d.month, d.day,
-            d.hour, d.minute, d.second,
-            d.millisecond, d.microsecond,
+            d.year,
+            d.month,
+            d.day,
+            d.hour,
+            d.minute,
+            d.second,
+            d.millisecond,
+            d.microsecond,
           ).toUtc();
         }
         return d.toUtc();
@@ -91,9 +124,8 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       }
       all.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-      setState(() {
-        _messages = all;
-      });
+      if (!mounted) return;
+      setState(() => _messages = all);
     } catch (e) {
       debugPrint("Error loading messages: $e");
     }
@@ -103,12 +135,13 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || _currentUserId == null) return;
 
+    _controller.clear();
+    _inputFocus.requestFocus();
+
     try {
       final keyProvider = KeyProvider();
       final recipientUserId = widget.chatView.partnerUserId!;
 
-      // For remote users fetch devices via the federated proxy endpoint so that
-      // device IDs match the ones stored in session keys.
       final devices = _isRemote
           ? await keyProvider.getRemoteUserDevicesKeys(
               widget.chatView.federatedAddress!,
@@ -130,7 +163,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
       _messages.add(sentMsg);
       _messageStreamController.add(List.from(_messages));
-      _controller.clear();
+      _scrollToBottom();
     } on Exception catch (e) {
       debugPrint("Error sending message: $e");
       if (!mounted) return;
@@ -164,7 +197,10 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(title, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+            Text(
+              title,
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+            ),
             Flexible(
               child: Text(
                 value,
@@ -177,63 +213,70 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       );
     }
 
-    void showMessageInfo(BuildContext context, MessageView msg) {
+    void showMessageInfo(BuildContext ctx, MessageView msg) {
       showModalBottomSheet(
-        context: context,
+        context: ctx,
         backgroundColor: const Color(0xFF1C1C1C),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        builder: (context) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "🔒 Message Encryption Info",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.greenAccent,
+        builder: (_) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "🔒 Message Encryption Info",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.greenAccent,
+                ),
+              ),
+              const SizedBox(height: 12),
+              infoRow("Message ID", msg.id),
+              infoRow("From", msg.fromUserId),
+              infoRow("Created at", msg.createdAt.toIso8601String()),
+              const Divider(color: Colors.grey),
+              const SizedBox(height: 6),
+              infoRow("Algorithm", "AES-256-GCM"),
+              infoRow("Key Exchange", "X3DH + Double Ratchet"),
+              if (_isRemote)
+                infoRow(
+                  "Remote node",
+                  widget.chatView.federatedAddress!.split('@').last,
+                ),
+              if (msg.fromDeviceId == "SELF_DEVICE")
+                infoRow(
+                  "Local Ciphertext Length",
+                  "${msg.localCiphertext.toString().length} bytes",
+                ),
+              if (msg.fromDeviceId == "SELF_DEVICE")
+                infoRow("Local Ciphertext", msg.localCiphertext.toString()),
+              const Divider(color: Colors.grey),
+              if (msg.fromDeviceId != "SELF_DEVICE")
+                infoRow("Ciphertext Length", "${msg.ciphertext.length} bytes"),
+              if (msg.fromDeviceId != "SELF_DEVICE")
+                infoRow(
+                  "Ciphertext (bytes)",
+                  base64Decode(msg.ciphertext).toString(),
+                ),
+              infoRow("Session ID", widget.chatId),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  label: const Text(
+                    "Close",
+                    style: TextStyle(color: Colors.grey),
                   ),
                 ),
-                const SizedBox(height: 12),
-                infoRow("Message ID", msg.id),
-                infoRow("From", msg.fromUserId),
-                infoRow("Created at", msg.createdAt.toIso8601String()),
-                const Divider(color: Colors.grey),
-                const SizedBox(height: 6),
-                infoRow("Algorithm", "AES-256-GCM"),
-                infoRow("Key Exchange", "X3DH + Double Ratchet"),
-                if (_isRemote)
-                  infoRow("Remote node", widget.chatView.federatedAddress!.split('@').last),
-                if (msg.fromDeviceId == "SELF_DEVICE")
-                  infoRow(
-                    "Local Ciphertext Length",
-                    "${msg.localCiphertext.toString().length} bytes",
-                  ),
-                if (msg.fromDeviceId == "SELF_DEVICE")
-                  infoRow("Local Ciphertext", msg.localCiphertext.toString()),
-                const Divider(color: Colors.grey),
-                if (msg.fromDeviceId != "SELF_DEVICE")
-                  infoRow("Ciphertext Length", "${msg.ciphertext.length} bytes"),
-                if (msg.fromDeviceId != "SELF_DEVICE")
-                  infoRow("Ciphertext (bytes)", base64Decode(msg.ciphertext).toString()),
-                infoRow("Session ID", widget.chatId),
-                const SizedBox(height: 12),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    label: const Text("Close", style: TextStyle(color: Colors.grey)),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -241,6 +284,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       children: [
         if (!widget.embedded) _buildAppBar(context),
         if (_isRemote) _buildRemoteBanner(),
+        _buildWsBanner(),
         Expanded(
           child: StreamBuilder<List<MessageView>>(
             stream: _messageStreamController.stream,
@@ -254,48 +298,29 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
               final messages = snapshot.data!;
               if (messages.isEmpty) {
                 return const Center(
-                  child: Text("No messages yet 💬", style: TextStyle(color: Colors.grey)),
+                  child: Text(
+                    "No messages yet",
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 );
               }
 
               return ListView.builder(
-                padding: const EdgeInsets.all(12),
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
                 itemCount: messages.length,
                 itemBuilder: (context, index) {
                   final msg = messages[index];
                   final isMe = msg.fromUserId == _currentUserId;
 
-                  return Align(
-                    alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      textDirection: isMe ? TextDirection.rtl : TextDirection.ltr,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isMe ? Colors.greenAccent : const Color(0xFF2A2A2A),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            msg.decryptedText,
-                            style: TextStyle(
-                              color: isMe ? Colors.black : Colors.white,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.info_outline,
-                            color: isMe ? Colors.greenAccent : Colors.grey[400],
-                            size: 18,
-                          ),
-                          onPressed: () => showMessageInfo(context, msg),
-                        ),
-                      ],
-                    ),
+                  return _buildMessageBubble(
+                    context,
+                    msg,
+                    isMe,
+                    () => showMessageInfo(context, msg),
                   );
                 },
               );
@@ -316,6 +341,97 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
     );
   }
 
+  Widget _buildMessageBubble(
+    BuildContext context,
+    MessageView msg,
+    bool isMe,
+    VoidCallback onInfo,
+  ) {
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.72;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isMe)
+            IconButton(
+              icon: Icon(Icons.info_outline, color: Colors.grey[600], size: 16),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onInfo,
+            ),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isMe ? Colors.greenAccent : const Color(0xFF2A2A2A),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(isMe ? 16 : 4),
+                  bottomRight: Radius.circular(isMe ? 4 : 16),
+                ),
+              ),
+              child: SelectableText(
+                msg.decryptedText,
+                style: TextStyle(
+                  color: isMe ? Colors.black : Colors.white,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          if (isMe)
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                color: Colors.greenAccent.withValues(alpha: 0.5),
+                size: 16,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onInfo,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWsBanner() {
+    if (_wsConnected) return const SizedBox.shrink();
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      color: const Color(0xFF2A1A00),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: Colors.orange,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            "Reconnecting…",
+            style: TextStyle(color: Colors.orange, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     return AppBar(
       backgroundColor: const Color(0xFF1C1C1C),
@@ -331,13 +447,15 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       actions: [
         IconButton(
           icon: const Icon(Icons.refresh, color: Colors.greenAccent),
-          onPressed: _loadMessages,
+          onPressed: () => _loadMessages().then((_) {
+            _messageStreamController.add(_messages);
+            _scrollToBottom();
+          }),
         ),
       ],
     );
   }
 
-  // Persistent banner shown when the chat partner is on a different node.
   Widget _buildRemoteBanner() {
     final nodeHost = widget.chatView.federatedAddress!.split('@').last;
     return Container(
@@ -360,8 +478,7 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
           ),
           Tooltip(
             message:
-                "End-to-end encrypted across nodes.\n"
-                "Your keys never leave your device.",
+                "End-to-end encrypted across nodes.\nYour keys never leave your device.",
             child: const Icon(Icons.lock, color: Color(0xFF3A8DFF), size: 14),
           ),
         ],
@@ -385,7 +502,11 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.public, color: const Color(0xFF3A8DFF), size: small ? 11 : 13),
+          Icon(
+            Icons.public,
+            color: const Color(0xFF3A8DFF),
+            size: small ? 11 : 13,
+          ),
           const SizedBox(width: 3),
           Text(
             "External",
@@ -402,29 +523,46 @@ class _ChatViewScreenState extends State<ChatViewScreen> {
 
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: const BoxDecoration(
         color: Color(0xFF1C1C1C),
         border: Border(top: BorderSide(color: Color(0xFF2F2F2F), width: 0.5)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: TextField(
-              controller: _controller,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: _isRemote
-                    ? "Message ${widget.chatView.federatedAddress}..."
-                    : "Type a message...",
-                hintStyle: TextStyle(color: Colors.grey[500]),
-                border: InputBorder.none,
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.enter): _sendMessage,
+              },
+              child: TextField(
+                controller: _controller,
+                focusNode: _inputFocus,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                minLines: 1,
+                maxLines: 6,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: _isRemote
+                      ? "Message ${widget.chatView.federatedAddress}…"
+                      : "Type a message…",
+                  hintStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
+                ),
               ),
             ),
           ),
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.send, color: Colors.greenAccent),
+            icon: const Icon(Icons.send_rounded, color: Colors.greenAccent),
             onPressed: _sendMessage,
+            tooltip: "Send (Enter)",
           ),
         ],
       ),

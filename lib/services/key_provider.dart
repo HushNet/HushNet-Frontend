@@ -228,13 +228,17 @@ class KeyProvider {
 
   // Fetches key bundles for a remote federated user via the local node proxy.
   // Uses the signed-request path so auth headers are included.
-  Future<List<UserDevice>> getRemoteUserDevicesKeys(String federatedAddress) async {
+  Future<List<UserDevice>> getRemoteUserDevicesKeys(
+    String federatedAddress,
+  ) async {
     final nodeUrl = await _storage.read(key: 'node_url');
     try {
-      final encoded = Uri.encodeComponent(federatedAddress);
+      final atIndex = federatedAddress.lastIndexOf('@');
+      final username = federatedAddress.substring(0, atIndex);
+      final nodeId = federatedAddress.substring(atIndex + 1);
       final response = await sendSignedRequest(
         'GET',
-        '$nodeUrl/users/federated/$encoded/keys',
+        '$nodeUrl/s2s/federated/$username/$nodeId/keys',
       );
       final data = response.data;
       final List devicesJson = (data is List) ? data : (data['devices'] ?? []);
@@ -245,7 +249,9 @@ class KeyProvider {
       debugPrint("Error fetching remote user devices: $e");
       final status = e.response?.statusCode ?? 0;
       final message = e.response?.data ?? e.message;
-      throw Exception('Failed to fetch remote user keys (HTTP $status): $message');
+      throw Exception(
+        'Failed to fetch remote user keys (HTTP $status): $message ${e.requestOptions.uri} ${e.requestOptions.method}',
+      );
     }
   }
 
@@ -308,7 +314,6 @@ class KeyProvider {
   // 🔐 DOUBLE RATCHET SESSION MANAGEMENT (with auto-update)
   // ================================================================
 
-
   /// Derive the next chain key from the current one using HKDF.
   Future<SecretKey> _deriveNextChainKey(SecretKey currentKey) async {
     final bytes = await currentKey.extractBytes();
@@ -320,10 +325,16 @@ class KeyProvider {
   }
 
   /// Retrieve all session keys for a given peer
-  Future<Map<String, SecretKey>> getRatchetSessionKeys(String peerDeviceId) async {
+  Future<Map<String, SecretKey>> getRatchetSessionKeys(
+    String peerDeviceId,
+  ) async {
     final rootB64 = await _storage.read(key: "session_${peerDeviceId}_root");
-    final sendB64 = await _storage.read(key: "session_${peerDeviceId}_send_chain");
-    final recvB64 = await _storage.read(key: "session_${peerDeviceId}_recv_chain");
+    final sendB64 = await _storage.read(
+      key: "session_${peerDeviceId}_send_chain",
+    );
+    final recvB64 = await _storage.read(
+      key: "session_${peerDeviceId}_recv_chain",
+    );
 
     if (rootB64 == null || sendB64 == null || recvB64 == null) {
       throw Exception("Missing ratchet session for $peerDeviceId");
@@ -384,7 +395,10 @@ class KeyProvider {
   }
 
   /// Decrypts and automatically updates the recv chain key
-  Future<String> decryptMessage(String ciphertextB64, String peerDeviceId) async {
+  Future<String> decryptMessage(
+    String ciphertextB64,
+    String peerDeviceId,
+  ) async {
     final keys = await getRatchetSessionKeys(peerDeviceId);
     final recvKey = keys["recv"]!;
 
@@ -408,8 +422,9 @@ class KeyProvider {
 
   /// Get ratchet public/private pair
   Future<Uint8List> getLocalRatchetPub(String peerDeviceId) async {
-    final ratchetPubB64 =
-        await _storage.read(key: "session_${peerDeviceId}_ratchet_pub");
+    final ratchetPubB64 = await _storage.read(
+      key: "session_${peerDeviceId}_ratchet_pub",
+    );
     if (ratchetPubB64 == null) {
       throw Exception("Missing local ratchet pub for $peerDeviceId");
     }
@@ -417,8 +432,9 @@ class KeyProvider {
   }
 
   Future<Uint8List> getLocalRatchetPriv(String peerDeviceId) async {
-    final ratchetPrivB64 =
-        await _storage.read(key: "session_${peerDeviceId}_ratchet_priv");
+    final ratchetPrivB64 = await _storage.read(
+      key: "session_${peerDeviceId}_ratchet_priv",
+    );
     if (ratchetPrivB64 == null) {
       throw Exception("Missing local ratchet priv for $peerDeviceId");
     }

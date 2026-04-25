@@ -223,9 +223,8 @@ Future<bool> createSession(
       sessionsInit.add({
         'recipient_device_id': device.deviceId,
         'ephemeral_pubkey': ekPubB64,
-        'sender_identity_pub': base64Encode(ikPub),
         'ciphertext': ciphertextB64,
-        'otpk_used': device.oneTimePrekeyPub,
+        'otpk_used': device.oneTimePrekeyPub ?? '',
         'sender_prekey_pub': base64Encode(ikPub),
       });
     } // end for devices

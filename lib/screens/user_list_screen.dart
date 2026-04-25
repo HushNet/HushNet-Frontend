@@ -7,7 +7,9 @@ import 'package:hushnet_frontend/utils/federation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class UserListScreen extends StatefulWidget {
-  const UserListScreen({super.key});
+  final Set<String> existingPartnerIds;
+
+  const UserListScreen({super.key, this.existingPartnerIds = const {}});
 
   @override
   State<UserListScreen> createState() => _UserListScreenState();
@@ -47,7 +49,11 @@ class _UserListScreenState extends State<UserListScreen>
       final nodeUrl = await _nodeService.getCurrentNodeUrl();
       final users = await fetchUsers(nodeUrl!);
       final userId = await _nodeService.getCurrentUserId();
-      users.removeWhere((user) => user.id == userId);
+      users.removeWhere(
+        (user) =>
+            user.id == userId ||
+            widget.existingPartnerIds.contains(user.id),
+      );
       setState(() {
         _allUsers = users;
         _filteredUsers = users;
