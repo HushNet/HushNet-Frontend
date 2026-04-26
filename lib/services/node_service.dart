@@ -24,6 +24,14 @@ class NodeService {
   String? _connectedUserId;
   final _controller = StreamController<Map<String, dynamic>>.broadcast();
 
+  bool _isConnected = false;
+  bool _retrying = false;
+  int _retryDelay = 3;
+  final _connectionStateController = StreamController<bool>.broadcast();
+
+  Stream<bool> get connectionState => _connectionStateController.stream;
+  bool get isConnected => _isConnected;
+
   Stream<Map<String, dynamic>> get stream => _controller.stream;
 
 
@@ -159,58 +167,68 @@ Future<void> connectWebSocket() async {
     return;
   }
   if (_connectedUserId == userId && _channel != null) {
-    debugPrint("🔁 WebSocket already connected for $userId");
+    debugPrint("WebSocket already connected for $userId");
     return;
   }
 
   var clean = nodeUrl.trim().replaceAll('#', '');
   final parsed = Uri.parse(clean);
-
-  final scheme = (parsed.scheme == 'https' || parsed.scheme == 'wss')
-      ? 'wss'
-      : 'ws';
-
+  final scheme = (parsed.scheme == 'https' || parsed.scheme == 'wss') ? 'wss' : 'ws';
   final host = parsed.host;
   final port = parsed.hasPort ? ':${parsed.port}' : '';
-
   final wsUrl = Uri.parse("$scheme://$host$port/ws/$userId");
-  debugPrint("Connecting WS to $wsUrl with $userId");
+  debugPrint("Connecting WS to $wsUrl");
+
+  void onDisconnect() {
+    _channel = null;
+    _connectedUserId = null;
+    _isConnected = false;
+    _connectionStateController.add(false);
+    _scheduleRetry();
+  }
 
   try {
     _channel = WebSocketChannel.connect(wsUrl);
-    debugPrint("WS connected for $userId");
     _connectedUserId = userId;
+    _isConnected = true;
+    _retryDelay = 3;
+    _connectionStateController.add(true);
+    debugPrint("WS connected for $userId");
 
+    _subscription?.cancel();
     _subscription = _channel!.stream.listen(
       (event) {
         try {
           final decoded = jsonDecode(event);
           _controller.add(decoded);
-          debugPrint("WS event: $decoded");
         } catch (e) {
           debugPrint("Invalid WS payload: $e");
         }
       },
       onError: (err) {
         debugPrint("WS error: $err");
-        _retry(nodeUrl, userId);
+        onDisconnect();
       },
       onDone: () {
         debugPrint("WS closed for $userId");
-        _retry(nodeUrl, userId);
+        onDisconnect();
       },
     );
   } catch (e) {
     debugPrint("Failed to connect WebSocket: $e");
-    _retry(nodeUrl, userId);
+    onDisconnect();
   }
 }
 
-  void _retry(String nodeUrl, String userId) {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (_connectedUserId == userId) {
-        connectWebSocket();
-      }
+  void _scheduleRetry() {
+    if (_retrying) return;
+    _retrying = true;
+    final delay = _retryDelay;
+    _retryDelay = (_retryDelay * 2).clamp(3, 60);
+    debugPrint("WS retry in ${delay}s");
+    Future.delayed(Duration(seconds: delay), () {
+      _retrying = false;
+      connectWebSocket();
     });
   }
 

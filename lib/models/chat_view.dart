@@ -10,6 +10,8 @@ class ChatView {
   final String? lastMessagePreview;
   final DateTime updatedAt;
   final String displayName;
+  // Populated by server for federated chats (partner_federated_address).
+  final String? federatedAddress;
 
   ChatView({
     required this.id,
@@ -21,7 +23,10 @@ class ChatView {
     this.lastMessagePreview,
     required this.updatedAt,
     this.displayName = '',
+    this.federatedAddress,
   });
+
+  bool get isRemote => federatedAddress != null;
 
   factory ChatView.fromJson(Map<String, dynamic> json) {
     return ChatView(
@@ -34,6 +39,22 @@ class ChatView {
       lastMessagePreview: json['last_message_preview'],
       updatedAt: DateTime.parse(json['updated_at']),
       displayName: json['name'] ?? json['partner_username'] ?? '',
+      federatedAddress: json['partner_federated_address'],
+    );
+  }
+
+  ChatView copyWith({String? federatedAddress}) {
+    return ChatView(
+      id: id,
+      chatType: chatType,
+      partnerUserId: partnerUserId,
+      partnerUsername: partnerUsername,
+      name: name,
+      lastMessageId: lastMessageId,
+      lastMessagePreview: lastMessagePreview,
+      updatedAt: updatedAt,
+      displayName: displayName,
+      federatedAddress: federatedAddress ?? this.federatedAddress,
     );
   }
 
@@ -47,15 +68,14 @@ class ChatView {
       'last_message_id': lastMessageId,
       'last_message_preview': lastMessagePreview,
       'updated_at': updatedAt.toIso8601String(),
+      if (federatedAddress != null) 'partner_federated_address': federatedAddress,
     };
   }
 
-  /// Optional helper: format the last update nicely for UI
   String get formattedDate {
     return DateFormat('dd/MM HH:mm').format(updatedAt);
   }
 
-  /// Optional helper: title shown in chat list
   String get displayTitle {
     if (chatType == 'group') return name ?? 'Group chat';
     return partnerUsername ?? 'Unknown';

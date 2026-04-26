@@ -123,14 +123,20 @@ class SessionService {
         );
         final dh3Bytes = await dh3.extractBytes();
 
-        // (optional) DH4 = DH(OPK_B, EK_A)
+        // (optional) DH4 = DH(OPK_B, EK_A) — must use the exact OPK Alice used
         List<int> dh4Bytes = [];
-        if (oneTimePreKeys.isNotEmpty) {
-          final opk = oneTimePreKeys.first;
+        if (p.otpkUsed != null && p.otpkUsed!.isNotEmpty) {
+          final otpkPubBytes = base64Decode(p.otpkUsed!);
+          final matchingOpk = oneTimePreKeys.firstWhere(
+            (opk) => _bytesEqual(opk['public']!, otpkPubBytes),
+            orElse: () => throw Exception(
+              'OPK used by sender (${p.otpkUsed}) not found in local store',
+            ),
+          );
           final opkPair = SimpleKeyPairData(
-            opk['private']!,
+            matchingOpk['private']!,
             publicKey: SimplePublicKey(
-              opk['public']!,
+              matchingOpk['public']!,
               type: KeyPairType.x25519,
             ),
             type: KeyPairType.x25519,
@@ -281,6 +287,14 @@ class SessionService {
       debugPrint('❌ Error initializing ratchet session: $e');
       debugPrint(st.toString());
     }
+  }
+
+  bool _bytesEqual(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Future<bool> hasSessionWithDevice(String deviceId) async {

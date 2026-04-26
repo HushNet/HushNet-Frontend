@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:hushnet_frontend/models/chat_view.dart';
 import 'package:hushnet_frontend/models/message_view.dart';
 import 'package:hushnet_frontend/services/key_provider.dart';
 import 'package:hushnet_frontend/services/node_service.dart';
@@ -165,6 +164,7 @@ class MessageService {
     required String plaintext,
     required String recipientUserId,
     required List<String> recipientDeviceIds,
+    String? toUserAddress,
   }) async {
     final nodeUrl = await nodeService.getCurrentNodeUrl();
     final logicalMsgId = const Uuid().v4();
@@ -229,12 +229,12 @@ class MessageService {
       );
     }
 
-    // 🔹 Corps complet pour le backend
     final payload = {
       "logical_msg_id": logicalMsgId,
       "chat_id": chatId,
       "to_user_id": recipientUserId,
-      "payloads": payloads, // ✅ LISTE, pas objet unique
+      if (toUserAddress != null) "to_user_address": toUserAddress,
+      "payloads": payloads,
     };
 
     // 🔹 Envoi en une requête
